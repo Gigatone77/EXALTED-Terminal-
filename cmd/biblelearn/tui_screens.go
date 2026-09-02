@@ -15,15 +15,21 @@ import (
 // navigation plus note toggling.
 func (m *appModel) handleBrowseKey(key string) tea.Model {
 	switch key {
-	case "up", "k":
-		if m.verse > 1 {
-			m.verse--
-		}
-	case "down", "j":
+	case "j":
 		vs, _ := m.currentVerses()
 		if m.verse < len(vs) {
 			m.verse++
 		}
+	case "k":
+		if m.verse > 1 {
+			m.verse--
+		}
+	case "up":
+		// Expand the visible verse span (show more lines).
+		m.setVerseSpan(m.verseSpan + 1)
+	case "down":
+		// Shrink the visible verse span (show fewer lines).
+		m.setVerseSpan(m.verseSpan - 1)
 	case "left", "h":
 		if m.verse > 1 {
 			m.verse--
@@ -226,7 +232,7 @@ func (m appModel) footer() string {
 	var hints string
 	switch m.tab {
 	case tabBrowse:
-		hints = "↑↓ verses · ←→ chapters · p/o books · ] expand [ shrink · c note · s memorize · 1-4 tabs"
+		hints = "↑ expand ↓ shrink · j/k verses · ←→ chapters · p/o books · 0 span=1 · c note · s memorize · 1-4 tabs"
 	case tabSearch:
 		hints = "enter search · esc back"
 	case tabMemory:

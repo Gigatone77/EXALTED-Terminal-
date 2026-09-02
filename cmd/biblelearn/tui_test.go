@@ -75,6 +75,41 @@ func TestTUI_LeftArrowNavigates(t *testing.T) {
 	}
 }
 
+// TestTUI_ArrowKeysControlSpan verifies up expands and down shrinks the
+// visible verse span, while j/k still navigate verses.
+func TestTUI_ArrowKeysControlSpan(t *testing.T) {
+	e := newTestEngine(t)
+	m, err := newAppModel(e)
+	if err != nil {
+		t.Fatalf("model: %v", err)
+	}
+	press := func(k string) {
+		T, _ := m.Update(key(k))
+		m = T.(*appModel)
+	}
+	if m.verseSpan != 1 {
+		t.Fatalf("expected initial span 1, got %d", m.verseSpan)
+	}
+	// up expands.
+	press("up")
+	if m.verseSpan != 2 {
+		t.Errorf("up: expected span 2, got %d", m.verseSpan)
+	}
+	// down shrinks back.
+	press("down")
+	if m.verseSpan != 1 {
+		t.Errorf("down: expected span 1, got %d", m.verseSpan)
+	}
+	// j/k still navigate verses (not the span).
+	press("j")
+	if m.verse != 2 {
+		t.Errorf("j: expected verse 2, got %d", m.verse)
+	}
+	if m.verseSpan != 1 {
+		t.Errorf("j must not change span, got %d", m.verseSpan)
+	}
+}
+
 func TestTUI_SearchTab(t *testing.T) {
 	e := newTestEngine(t)
 	m, err := newAppModel(e)
