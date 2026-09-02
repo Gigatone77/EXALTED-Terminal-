@@ -37,6 +37,7 @@ type appModel struct {
 	book        int // ordinal
 	chapter     int
 	verse       int
+	verseSpan   int // number of consecutive verses shown at once
 	bc          *model.BookContent
 
 	// Search state.
@@ -67,6 +68,7 @@ func newAppModel(e *engine.Engine) (*appModel, error) {
 	m.searchInput = textinput.New()
 	m.searchInput.Placeholder = "search the scriptures…"
 	m.searchInput.PromptStyle = styleMuted
+	m.verseSpan = 1
 	// Load books for browse.
 	vs, err := e.Store.ImportedBooks(m.activeVersion, "bible")
 	if err == nil {

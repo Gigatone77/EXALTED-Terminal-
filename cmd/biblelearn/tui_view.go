@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -41,22 +42,35 @@ func (m appModel) viewBrowse() string {
 	}
 	sb.WriteString("\n")
 	// Chapter/verse line.
-	sb.WriteString(fmt.Sprintf("  %s%d:%d%s\n\n",
-		styleMuted.Render("Chapter "), m.chapter, m.verse, styleDim.Render(" / "+verseTot(m.chapterList(), m.versesInChapter()))))
-
-	// Verse display (larger, wrapped).
-	text := m.verseText(m.chapter, m.verse)
-	ref := fmt.Sprintf("%s %d:%d", m.bookName(m.book), m.chapter, m.verse)
-	head := styleAccent().Render(fmt.Sprintf("▶ %s", ref))
-	if _, exists, _ := m.e.Store.GetNote(m.activeVersion, m.book, m.chapter, m.verse); exists {
-		head += styleMuted.Render("  ✎ note")
+	total := m.versesInChapter()
+	last := m.verse + m.verseSpan - 1
+	if last > total {
+		last = total
 	}
-	sb.WriteString(head + "\n\n")
-	sb.WriteString(styleBody.Render(text))
+	rangeLabel := fmt.Sprintf("%d:%d", m.chapter, m.verse)
+	if last != m.verse {
+		rangeLabel += fmt.Sprintf("–%d", last)
+	}
+	sb.WriteString(fmt.Sprintf("  %s%s%s\n\n",
+		styleMuted.Render("Chapter "), rangeLabel, styleDim.Render(" / "+strconv.Itoa(m.verseSpan)+" of "+strconv.Itoa(total))))
+
+	// Verse display: the whole visible span (larger, wrapped).
+	for v := m.verse; v <= last; v++ {
+		head := styleAccent().Render(fmt.Sprintf("▸ %d", v))
+		if v > m.verse {
+			head = styleMuted.Render(fmt.Sprintf("▸ %d", v))
+		}
+		if v == m.verse {
+			if _, exists, _ := m.e.Store.GetNote(m.activeVersion, m.book, m.chapter, v); exists {
+				head += styleMuted.Render("  ✎ note")
+			}
+		}
+		sb.WriteString(head + " " + styleBody.Render(m.verseText(m.chapter, v)) + "\n\n")
+	}
 
 	// Chapter overview (small book/chapter progress).
 	if notesCount := m.noteCount(); notesCount > 0 {
-		sb.WriteString("\n\n" + styleMuted.Render(fmt.Sprintf("%d study note(s) in this book", notesCount)))
+		sb.WriteString(styleMuted.Render(fmt.Sprintf("%d study note(s) in this book", notesCount)))
 	}
 	return sb.String()
 }
@@ -143,10 +157,6 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string(r[:n]) + "…"
-}
-
-func verseTot(chapters []int, cur int) string {
-	return fmt.Sprintf("%d ch · %d v", len(chapters), cur)
 }
 
 func styleWarnBox() lipgloss.Style { return styleBox.Foreground(tWarn) }

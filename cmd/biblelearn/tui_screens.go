@@ -60,8 +60,37 @@ func (m *appModel) handleBrowseKey(key string) tea.Model {
 		m.addNote()
 	case "s":
 		m.studyVerse()
+	case "]", "=", "+":
+		// expand the visible verse span
+		m.setVerseSpan(m.verseSpan + 1)
+	case "[", "-", "_":
+		// contract the visible verse span
+		m.setVerseSpan(m.verseSpan - 1)
+	case "0":
+		// reset to a single verse
+		m.setVerseSpan(1)
 	}
 	return m
+}
+
+// setVerseSpan adjusts how many consecutive verses are shown, clamped to at
+// least 1 and to the remaining verses in the chapter.
+func (m *appModel) setVerseSpan(n int) {
+	vs, _ := m.currentVerses()
+	total := len(vs)
+	if n < 1 {
+		n = 1
+	}
+	// Don't let the span push past the end of the chapter.
+	maxSpan := total - m.verse + 1
+	if maxSpan < 1 {
+		maxSpan = 1
+	}
+	if n > maxSpan {
+		n = maxSpan
+	}
+	m.verseSpan = n
+	m.msg = fmt.Sprintf("Showing %d verse(s) from %s.", m.verseSpan, m.currentRef().String())
 }
 
 func (m *appModel) moveBook(delta int) {
@@ -197,7 +226,7 @@ func (m appModel) footer() string {
 	var hints string
 	switch m.tab {
 	case tabBrowse:
-		hints = "↑↓ verses · ←→ chapters · p/o books · c note · s memorize · 1-4 tabs"
+		hints = "↑↓ verses · ←→ chapters · p/o books · ] expand [ shrink · c note · s memorize · 1-4 tabs"
 	case tabSearch:
 		hints = "enter search · esc back"
 	case tabMemory:

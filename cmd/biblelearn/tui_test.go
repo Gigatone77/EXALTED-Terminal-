@@ -124,3 +124,50 @@ func TestTUI_NotesTab(t *testing.T) {
 		t.Error("notes view missing header")
 	}
 }
+
+func TestTUI_ExpandVerseSpan(t *testing.T) {
+	e := newTestEngine(t)
+	m, err := newAppModel(e)
+	if err != nil {
+		t.Fatalf("model: %v", err)
+	}
+	m.loadBook(1) // Genesis
+	m.chapter = 1
+	m.verse = 1
+	base := m.View()
+
+	// Expanding with ']' increases the span and shows more verses.
+	T, _ := m.Update(key("]"))
+	m = T.(*appModel)
+	if m.verseSpan != 2 {
+		t.Errorf("expected span 2 after expand, got %d", m.verseSpan)
+	}
+	expanded := m.View()
+	if expanded == base {
+		t.Error("expanding the span should change the rendered view")
+	}
+	if !strings.Contains(expanded, "2 of") {
+		t.Errorf("expanded view missing span count, got:\n%s", expanded)
+	}
+
+	// Contracting with '[' reduces it back toward a single verse.
+	T, _ = m.Update(key("["))
+	m = T.(*appModel)
+	if m.verseSpan != 1 {
+		t.Errorf("expected span 1 after contract, got %d", m.verseSpan)
+	}
+
+	// '0' resets to a single verse no matter the current span.
+	T, _ = m.Update(key("]"))
+	m = T.(*appModel)
+	T, _ = m.Update(key("]"))
+	m = T.(*appModel)
+	if m.verseSpan < 2 {
+		t.Fatalf("expected span >=2 before reset, got %d", m.verseSpan)
+	}
+	T, _ = m.Update(key("0"))
+	m = T.(*appModel)
+	if m.verseSpan != 1 {
+		t.Errorf("'0' should reset span to 1, got %d", m.verseSpan)
+	}
+}

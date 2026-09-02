@@ -1,31 +1,55 @@
 # EXALTED Terminal
 
-A single-binary, offline-first Bible learning & study tool with a fast, dark-mode
-terminal UI. It bundles the public-domain **KJV** and can install the **NKJV**
-(and other public-domain versions) with per-book canonical verification.
+Two editions of one offline-first Bible learning & study tool:
 
-Everything runs locally — no sign-up, no cloud. Your reading, memory, and notes
-are stored in a local SQLite database at `~/.biblelearn`.
+- **Terminal** — a fast, dark-mode TUI (`exalted`)
+- **Graphical** — a modern Fyne desktop app (`exalted-gui`), also packaged as a
+  portable **AppImage** you can double-click
+
+Both bundle the public-domain **KJV** and can install the **NKJV** (and other
+public-domain versions) with per-book canonical verification. Everything runs
+locally — no sign-up, no cloud. Your reading, memory, and notes are stored in a
+local SQLite database at `~/.biblelearn`.
 
 ## Features
 
-- **Browse** the Bible verse by verse (← → chapters, p/o books, ↑ ↓ verses)
+- **Browse** the Bible verse by verse — navigate chapters/verses, and expand the
+  view to show a passage of several consecutive verses at once
 - **Search** all installed versions with full-text matching, ranked so shorter
   books surface first
-- **Memory** — spaced-repetition verse review (`s` to memorize, then grade cards)
+- **Memory** — spaced-repetition verse review (add a verse, then grade cards)
 - **Notes** — attach personal study notes to any verse
 - **Offline-first** — the KJV ships inside the binary and needs no network
 - **Multiple versions** — install NKJV, USFM/text, or archive-sourced Bibles
 - **Church locator** plugin (open-source OpenStreetMap data)
-- **Local web UI** via `serve`
 
 ## Install
 
-Build the binary from source:
+### Graphical AppImage (no build required)
+
+Download/extract the portable AppImage (a single `EXALTED_Terminal-x86_64.AppImage`
+file, bundles its own GL/Wayland libs), make it executable, and run:
+
+```sh
+chmod +x EXALTED_Terminal-x86_64.AppImage
+./EXALTED_Terminal-x86_64.AppImage
+```
+
+### Build from source
+
+The terminal edition needs only the Go toolchain:
 
 ```sh
 make build          # produces ./bin/exalted
 make install        # installs to ~/.local/bin/exalted
+```
+
+The graphical edition needs GL/Wayland/X11 dev headers (via Homebrew on Fedora
+Atomic) and `appimagetool`:
+
+```sh
+make gui            # build ./bin/exalted-gui
+make appimage       # build dist/EXALTED_Terminal-x86_64.AppImage
 ```
 
 The tool works offline out of the box — the embedded KJV is seeded on first run.
@@ -38,12 +62,20 @@ Running `exalted` with no arguments opens the **interactive terminal UI**:
  1 Browse    2 Search    3 Memory    4 Notes
 ```
 
-- **1 Browse** — navigate chapters/verses. `c` saves a note, `s` adds the verse
-  to your memory deck.
+- **1 Browse** — navigate chapters/verses. `]` expands to show several
+  consecutive verses at once, `[` shrinks back, `0` resets. `c` saves a note,
+  `s` adds the verse to your memory deck.
 - **2 Search** — type a query; results rank shorter books first.
 - **3 Memory** — spaced-repetition review: `space` reveals the answer, then grade
   with `a`/`h`/(`g`)/`e`. New verses appear here after studying them.
 - **4 Notes** — browse notes you've written; `d` deletes.
+
+### Graphical app
+
+Launching `exalted-gui` (or the AppImage) opens the desktop window with the
+same four areas as tabs: **Browse** (book/chapter navigation on the left, the
+passage on the right), **Search**, **Memory**, and **Notes**. It reads and writes
+the same `~/.biblelearn` data as the terminal edition.
 
 Scripting / import commands:
 

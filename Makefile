@@ -4,6 +4,8 @@
 #   make build-windows Cross-compile Windows binary (./dist/exalted.exe)
 #   make build-all     Build Linux + Windows
 #   make install       Install to ~/.local/bin
+#   make gui           Build the graphical (Fyne) edition -> bin/exalted-gui
+#   make appimage      Build a portable Linux AppImage -> dist/EXALTED_Terminal.AppImage
 #   make test          Run unit tests
 #   make tidy          gofmt + go mod tidy
 #
@@ -18,8 +20,12 @@ GOOS    := $(shell $(GO) env GOOS)
 GOARCH  := $(shell $(GO) env GOARCH)
 
 PKG := ./cmd/biblelearn
+GUIPKG := ./cmd/exalted-gui
+GUIAPP := bin/exalted-gui
+APPIMAGE := dist/EXALTED_Terminal-x86_64.AppImage
+APPIMAGETOOL ?= /var/home/Gigatone/tools/appimagetool
 
-.PHONY: build build-windows build-all install test tidy clean
+.PHONY: build build-windows build-all install gui appimage test tidy clean
 
 build:
 	@mkdir -p bin
@@ -42,8 +48,23 @@ install: build
 	install -m 0755 bin/$(BINARY) $(HOME)/.local/bin/$(BINARY)
 	@echo "installed $(HOME)/.local/bin/$(BINARY)"
 
+# GUI needs GL/Wayland/X11 dev headers (e.g. from Homebrew on Fedora Atomic).
+gui:
+	@mkdir -p bin
+	./scripts/build-gui.sh
+	@install -m 0755 /tmp/opencode/exalted-gui bin/exalted-gui
+	@echo "built $(GUIAPP)"
+
+appimage: gui
+	./scripts/package-appimage.sh
+	@echo "built $(APPIMAGE)"
+
 test:
-	$(GO) test ./...
+	$(GO) test $(GO_FLAGS) ./cmd/biblelearn/... ./internal/...
+	@echo "note: GUI tests need the Homebrew env; run: make test-gui"
+
+test-gui:
+	@bash -c '. scripts/env.sh && go test ./cmd/exalted-gui/...'
 
 tidy:
 	$(GO) fmt ./...
