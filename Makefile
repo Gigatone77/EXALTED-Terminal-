@@ -1,15 +1,15 @@
 # EXALTED Terminal — build targets
 #
-#   make build         Build Linux binary (./bin/exhaled)
-#   make build-windows Cross-compile Windows binary (./dist/exhaled.exe)
+#   make build         Build Linux binary (./bin/exalted)
+#   make build-windows Cross-compile Windows binary (./dist/exalted.exe)
 #   make build-all     Build Linux + Windows
 #   make install       Install to ~/.local/bin
 #   make test          Run unit tests
 #   make tidy          gofmt + go mod tidy
 #
-# Binary name: exhaled (EXALTED Terminal)
+# Binary name: exalted (EXALTED Terminal)
 
-BINARY := exhaled
+BINARY := exalted
 VERSION ?= 0.1.0
 LDFLAGS := -s -w -X main.version=$(VERSION)
 

@@ -22,7 +22,7 @@ func runVersions(dataDir string) {
 	must(err)
 	active, _ := e.ActiveVersionID()
 	if len(vs) == 0 {
-		fmt.Println("No versions installed. Use 'exhaled install-pdf' to add one.")
+		fmt.Println("No versions installed. Use 'exalted install-pdf' to add one.")
 		return
 	}
 	fmt.Printf("%-8s %-28s %-6s %-9s %-6s %s\n", "ID", "Name", "Lang", "Col", "Books", "Source")
@@ -51,7 +51,7 @@ func runInstallPDF(ctx context.Context, dataDir string, args []string) {
 	source := fs.String("source", "user PDF import", "source description")
 	fs.Parse(args)
 	if fs.NArg() < 1 {
-		fatal("usage: exhaled install-pdf --id KJV --name \"...\" <dir-or-zip>")
+		fatal("usage: exalted install-pdf --id KJV --name \"...\" <dir-or-zip>")
 	}
 	if *id == "" {
 		fatal("--id is required")
@@ -82,7 +82,7 @@ func runInstallText(ctx context.Context, dataDir string, args []string) {
 	coll := fs.String("collection", "bible", "collection: bible or egw")
 	fs.Parse(args)
 	if fs.NArg() < 1 {
-		fatal("usage: exhaled install-text --id NKJV --name \"...\" <file>")
+		fatal("usage: exalted install-text --id NKJV --name \"...\" <file>")
 	}
 	if *id == "" {
 		fatal("--id is required")
@@ -124,7 +124,7 @@ func runFetchArchive(ctx context.Context, dataDir string, args []string) {
 		return
 	}
 	if *query == "" {
-		fatal("usage: exhaled fetch-archive --q \"kjv bible\" | --item <id>")
+		fatal("usage: exalted fetch-archive --q \"kjv bible\" | --item <id>")
 	}
 	items, err := e.FetchFromArchive(ctx, *query, 8)
 	must(err)
@@ -142,7 +142,7 @@ func runFetchArchive(ctx context.Context, dataDir string, args []string) {
 	if *list {
 		return
 	}
-	fmt.Println("\nInstall one with: exhaled fetch-archive --item <identifier> --id <ID> --name \"<Name>\"")
+	fmt.Println("\nInstall one with: exalted fetch-archive --item <identifier> --id <ID> --name \"<Name>\"")
 }
 
 func runInstallNKJV(ctx context.Context, dataDir string, args []string) {
@@ -180,7 +180,7 @@ func runInstallNKJVPdf(ctx context.Context, dataDir string, args []string) {
 	fs.Parse(args)
 	path := strings.Join(fs.Args(), " ")
 	if path == "" {
-		fatal("usage: exhaled install-nkjv-pdf <path-to-whole-bible-pdf>")
+		fatal("usage: exalted install-nkjv-pdf <path-to-whole-bible-pdf>")
 	}
 	e, err := openEngine(dataDir)
 	must(err)
@@ -209,7 +209,7 @@ func runPlugin(ctx context.Context, dataDir string, args []string) {
 	fs.Parse(args)
 	args = fs.Args()
 	if len(args) == 0 {
-		fatal("usage: exhaled plugin (list | install <name> | uninstall <name>)")
+		fatal("usage: exalted plugin (list | install <name> | uninstall <name>)")
 	}
 	e, err := openEngine(dataDir)
 	must(err)
@@ -227,13 +227,13 @@ func runPlugin(ctx context.Context, dataDir string, args []string) {
 		}
 	case "install":
 		if len(args) < 2 {
-			fatal("usage: exhaled plugin install <name>")
+			fatal("usage: exalted plugin install <name>")
 		}
 		must(e.InstallPlugin(ctx, args[1]))
 		fmt.Printf("Installed plugin %q.\n", args[1])
 	case "uninstall":
 		if len(args) < 2 {
-			fatal("usage: exhaled plugin uninstall <name>")
+			fatal("usage: exalted plugin uninstall <name>")
 		}
 		must(e.UninstallPlugin(ctx, args[1]))
 		fmt.Printf("Uninstalled plugin %q.\n", args[1])
@@ -262,7 +262,7 @@ func runChurch(ctx context.Context, dataDir string, args []string) {
 	}
 	query := strings.Join(queryParts, " ")
 	if query == "" {
-		fatal("usage: exhaled church \"<place, city or address>\" [--radius KM]")
+		fatal("usage: exalted church \"<place, city or address>\" [--radius KM]")
 	}
 	e, err := openEngine(dataDir)
 	must(err)
@@ -282,7 +282,7 @@ func runChurch(ctx context.Context, dataDir string, args []string) {
 
 func runRead(dataDir string, args []string) {
 	if len(args) < 1 {
-		fatal("usage: exhaled read <REF> [--version ID]")
+		fatal("usage: exalted read <REF> [--version ID]")
 	}
 	refSpec := args[0]
 	versionID := ""
@@ -340,7 +340,7 @@ func runRead(dataDir string, args []string) {
 
 func runSearch(dataDir string, args []string) {
 	if len(args) < 1 {
-		fatal("usage: exhaled search <query> [--version ID]")
+		fatal("usage: exalted search <query> [--version ID]")
 	}
 	query := args[0]
 	versionID := ""
@@ -366,7 +366,7 @@ func runSearch(dataDir string, args []string) {
 
 func runTerms(dataDir string, args []string) {
 	if len(args) < 1 {
-		fatal("usage: exhaled terms <prefix> [--version ID] [--alpha]")
+		fatal("usage: exalted terms <prefix> [--version ID] [--alpha]")
 	}
 	prefix := args[0]
 	versionID := ""
@@ -450,7 +450,7 @@ func runIndex(dataDir string, args []string) {
 
 func runNotes(dataDir string, args []string) {
 	if len(args) < 1 {
-		fatal("usage: exhaled notes list|add|rm")
+		fatal("usage: exalted notes list|add|rm")
 	}
 	e, err := openEngine(dataDir)
 	must(err)
@@ -466,7 +466,7 @@ func runNotes(dataDir string, args []string) {
 		}
 	case "add", "rm":
 		if len(args) < 2 {
-			fatal("usage: exhaled notes add|rm <REF> [body]")
+			fatal("usage: exalted notes add|rm <REF> [body]")
 		}
 		r, ok := model.ParseRef(args[1])
 		if !ok {
@@ -484,7 +484,7 @@ func runNotes(dataDir string, args []string) {
 		must(e.Store.SaveNote(note))
 		fmt.Println("saved")
 	default:
-		fatal("usage: exhaled notes list|add|rm")
+		fatal("usage: exalted notes list|add|rm")
 	}
 }
 

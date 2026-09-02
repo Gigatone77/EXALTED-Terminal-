@@ -15,7 +15,7 @@ import (
 const usage = `EXALTED Terminal — offline Bible learning & study tool
 
 Usage:
-  exhaled [command]
+  exalted [command]
 
 Commands:
   (no arg)          Start the interactive terminal UI

@@ -24,15 +24,15 @@ are stored in a local SQLite database at `~/.biblelearn`.
 Build the binary from source:
 
 ```sh
-make build          # produces ./bin/exhaled
-make install        # installs to ~/.local/bin/exhaled
+make build          # produces ./bin/exalted
+make install        # installs to ~/.local/bin/exalted
 ```
 
 The tool works offline out of the box — the embedded KJV is seeded on first run.
 
 ## Usage
 
-Running `exhaled` with no arguments opens the **interactive terminal UI**:
+Running `exalted` with no arguments opens the **interactive terminal UI**:
 
 ```
  1 Browse    2 Search    3 Memory    4 Notes
@@ -48,21 +48,21 @@ Running `exhaled` with no arguments opens the **interactive terminal UI**:
 Scripting / import commands:
 
 ```sh
-exhaled read "John 3:16"        # print a passage (defaults to active version)
-exhaled read "John 3:16 (NKJV)" # reference a specific version
-exhaled search "love"           # full-text search across installed versions
-exhaled versions                # list installed versions
-exhaled install-nkjv            # install the New King James Version (GetBible API)
-exhaled install-pdf <dir|zip>   # import a version from per-book PDF files
-exhaled install-text <dir>      # import a version from USFM / plain text
-exhaled fetch-archive <query>   # install a public-domain Bible from Internet Archive
-exhaled notes                   # manage study notes
-exhaled terms "jo"              # autocomplete terms for search
-exhaled index                   # rebuild the search index
-exhaled serve                   # local web/app UI
-exhaled plugin list             # manage plugins (e.g. church)
-exhaled church <zip>            # find nearby churches
-exhaled help                    # full usage
+exalted read "John 3:16"        # print a passage (defaults to active version)
+exalted read "John 3:16 (NKJV)" # reference a specific version
+exalted search "love"           # full-text search across installed versions
+exalted versions                # list installed versions
+exalted install-nkjv            # install the New King James Version (GetBible API)
+exalted install-pdf <dir|zip>   # import a version from per-book PDF files
+exalted install-text <dir>      # import a version from USFM / plain text
+exalted fetch-archive <query>   # install a public-domain Bible from Internet Archive
+exalted notes                   # manage study notes
+exalted terms "jo"              # autocomplete terms for search
+exalted index                   # rebuild the search index
+exalted serve                   # local web/app UI
+exalted plugin list             # manage plugins (e.g. church)
+exalted church <zip>            # find nearby churches
+exalted help                    # full usage
 ```
 
 ### Stock versions
