@@ -46,6 +46,35 @@ func TestTUI_BrowseRenders(t *testing.T) {
 	}
 }
 
+// TestTUI_LeftArrowNavigates ensures the left arrow (and 'h') move to the
+// previous verse rather than being swallowed by tab handling.
+func TestTUI_LeftArrowNavigates(t *testing.T) {
+	e := newTestEngine(t)
+	m, err := newAppModel(e)
+	if err != nil {
+		t.Fatalf("model: %v", err)
+	}
+	press := func(k string) {
+		T, _ := m.Update(key(k))
+		m = T.(*appModel)
+	}
+	// Move down to verse 4.
+	for _, k := range []string{"j", "j", "j"} {
+		press(k)
+	}
+	if m.verse != 4 {
+		t.Fatalf("expected verse 4, got %d", m.verse)
+	}
+	press("left")
+	if m.verse != 3 {
+		t.Errorf("left arrow: expected verse 3, got %d", m.verse)
+	}
+	press("h")
+	if m.verse != 2 {
+		t.Errorf("h key: expected verse 2, got %d", m.verse)
+	}
+}
+
 func TestTUI_SearchTab(t *testing.T) {
 	e := newTestEngine(t)
 	m, err := newAppModel(e)

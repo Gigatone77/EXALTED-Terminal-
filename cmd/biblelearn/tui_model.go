@@ -188,8 +188,6 @@ func (m *appModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "4":
 		m.tab = tabNotes
 		m.reloadNotes()
-	case "left", "h":
-		return m, nil
 	}
 	return m.handleBrowseKey(key), nil
 }
