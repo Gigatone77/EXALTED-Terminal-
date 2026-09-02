@@ -1,0 +1,214 @@
+package main
+
+import (
+	"fmt"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
+	"github.com/gigatone/biblelearn/internal/books"
+	"github.com/gigatone/biblelearn/internal/store"
+)
+
+// handleBrowseKey processes keyboard input on the Browse tab: book/chapter/verse
+// navigation plus note toggling.
+func (m *appModel) handleBrowseKey(key string) tea.Model {
+	switch key {
+	case "up", "k":
+		if m.verse > 1 {
+			m.verse--
+		}
+	case "down", "j":
+		vs, _ := m.currentVerses()
+		if m.verse < len(vs) {
+			m.verse++
+		}
+	case "left", "h":
+		if m.verse > 1 {
+			m.verse--
+		} else if m.chapter > 1 {
+			m.chapter--
+			vs, _ := m.currentVerses()
+			if len(vs) > 0 {
+				m.verse = vs[len(vs)-1]
+			}
+		}
+	case "right", "l":
+		vs, _ := m.currentVerses()
+		if m.verse < len(vs) {
+			m.verse++
+		} else {
+			if b, ok := books.ByOrdinal(m.book); ok && m.chapter < b.Chapters {
+				m.chapter++
+				m.verse = 1
+			}
+		}
+	case "n":
+		// next chapter
+		if b, ok := books.ByOrdinal(m.book); ok && m.chapter < b.Chapters {
+			m.chapter++
+			m.verse = 1
+		}
+	case "p":
+		// previous book
+		m.moveBook(-1)
+	case "o":
+		// next book
+		m.moveBook(1)
+	case "c":
+		m.addNote()
+	case "s":
+		m.studyVerse()
+	}
+	return m
+}
+
+func (m *appModel) moveBook(delta int) {
+	if len(m.browseBooks) == 0 {
+		return
+	}
+	idx := -1
+	for i, b := range m.browseBooks {
+		if b.Ordinal == m.book {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		idx = 0
+	}
+	idx += delta
+	if idx < 0 {
+		idx = len(m.browseBooks) - 1
+	}
+	if idx >= len(m.browseBooks) {
+		idx = 0
+	}
+	m.loadBook(m.browseBooks[idx].Ordinal)
+}
+
+// handleMemoryKey processes the Memory review tab.
+func (m *appModel) handleMemoryKey(key string) tea.Model {
+	switch key {
+	case "q", "esc":
+		m.tab = tabBrowse
+		return m
+	case " ":
+		m.shown = true
+	case "a", "0", "1":
+		if m.shown {
+			m.grade(0) // again
+		}
+	case "h", "3":
+		if m.shown {
+			m.grade(3) // hard
+		}
+	case "g", "4":
+		if m.shown {
+			m.grade(4) // good
+		}
+	case "e", "5":
+		if m.shown {
+			m.grade(5) // easy
+		}
+	}
+	return m
+}
+
+func (m *appModel) grade(q int) {
+	if m.cardIdx >= len(m.cards) {
+		return
+	}
+	card := m.cards[m.cardIdx]
+	next := store.ScheduleNext(card, q)
+	_ = m.e.Store.SaveMemory(next)
+	m.cardIdx++
+	if m.cardIdx >= len(m.cards) {
+		m.msg = "session complete — nothing left due."
+		m.cardIdx = 0
+	}
+	m.shown = false
+}
+
+// handleNotesKey processes the Notes tab.
+func (m *appModel) handleNotesKey(key string) tea.Model {
+	switch key {
+	case "q", "esc":
+		m.tab = tabBrowse
+	case "up", "k":
+		if m.noteCh > 0 {
+			m.noteCh--
+		}
+	case "down", "j":
+		if m.noteCh < len(m.notes)-1 {
+			m.noteCh++
+		}
+	case "d", "x":
+		if m.noteCh >= 0 && m.noteCh < len(m.notes) {
+			n := m.notes[m.noteCh]
+			_ = m.e.Store.SaveNote(store.Note{VersionID: n.VersionID, Book: n.Book, Chapter: n.Chapter, Verse: n.Verse, Body: ""})
+			m.reloadNotes()
+			if m.noteCh >= len(m.notes) {
+				m.noteCh = len(m.notes) - 1
+			}
+		}
+	}
+	return m
+}
+
+func (m *appModel) addNote() {
+	if m.bc == nil {
+		return
+	}
+	n := store.Note{VersionID: m.activeVersion, Book: m.book, Chapter: m.chapter, Verse: m.verse}
+	_, exists, _ := m.e.Store.GetNote(m.activeVersion, m.book, m.chapter, m.verse)
+	if exists {
+		return
+	}
+	_ = m.e.Store.SaveNote(n)
+	m.msg = fmt.Sprintf("Note added for %s.", m.currentRef().String())
+}
+
+// toolbar renders the tab bar.
+func (m appModel) toolbar() string {
+	tabs := []struct {
+		label string
+		key   string
+	}{
+		{"Browse", "1"}, {"Search", "2"}, {"Memory", "3"}, {"Notes", "4"},
+	}
+	var b strings.Builder
+	for i, t := range tabs {
+		label := fmt.Sprintf(" %s %s ", t.key, t.label)
+		var s string
+		if i == m.tab {
+			s = styleTabSel.Render(label)
+		} else {
+			s = styleTabIdle.Render(label)
+		}
+		b.WriteString(s)
+	}
+	return b.String()
+}
+
+// footer renders hint text plus a toast message if present.
+func (m appModel) footer() string {
+	var hints string
+	switch m.tab {
+	case tabBrowse:
+		hints = "↑↓ verses · ←→ chapters · p/o books · c note · s memorize · 1-4 tabs"
+	case tabSearch:
+		hints = "enter search · esc back"
+	case tabMemory:
+		hints = "space reveal · a=0 h=3 g=4 e=5 · q quit"
+	case tabNotes:
+		hints = "↑↓ select · d delete · q back"
+	}
+	if m.msg != "" {
+		hints = styleAccent().Render(m.msg) + "  |  " + hints
+	}
+	return styleHint.Render(hints)
+}
+
+func styleAccent() lipgloss.Style { return lipgloss.NewStyle().Foreground(tAccentHi).Bold(true) }

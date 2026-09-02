@@ -1,0 +1,21 @@
+# Binaries
+/biblelearn
+/exhaled
+/bin/
+
+# Build artifacts
+/dist/
+
+# Local data (should NOT be committed)
+/data/
+/biblelearn-data/
+*.db
+*.db-wal
+*.db-shm
+
+# Go
+/go.sum.tmp
+
+# Editor/OS
+.DS_Store
+*.swp
