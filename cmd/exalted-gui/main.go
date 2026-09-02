@@ -34,15 +34,18 @@ type guiApp struct {
 	w   fyne.Window
 
 	// Browse
-	bookSel   *widget.Select
-	chapEntry *widget.Entry
-	verseList *widget.List
-	narration *widget.Label
-	refLabel  *widget.Label
-	verses    []int // ordered verse numbers of the current chapter
-	bc        *model.BookContent
-	curBook   int
-	curChap   int
+	bookSel        *widget.Select
+	chapEntry      *widget.Entry
+	verseList      *widget.List
+	narration      *widget.Label
+	refLabel       *widget.Label
+	verseSpanLabel *widget.Label
+	verseSpan      int   // how many consecutive verses to show (default 1)
+	verseSelIdx    int   // currently selected row in verseList
+	verses         []int // ordered verse numbers of the current chapter
+	bc             *model.BookContent
+	curBook        int
+	curChap        int
 
 	// Search
 	searchEntry *widget.Entry
@@ -77,7 +80,7 @@ func main() {
 
 	a := app.New()
 	a.Settings().SetTheme(&darkTheme{})
-	g := &guiApp{eng: e}
+	g := &guiApp{eng: e, verseSpan: 1}
 	g.w = a.NewWindow("EXALTED Terminal")
 
 	title := canvas.NewText("EXALTED Terminal", mustColor(amber))
@@ -150,6 +153,7 @@ func (g *guiApp) buildBrowse() fyne.CanvasObject {
 	)
 	g.verseList.OnSelected = func(id widget.ListItemID) {
 		if id >= 0 && id < len(g.verses) {
+			g.verseSelIdx = int(id)
 			g.selectVerse(id)
 		}
 	}
@@ -157,9 +161,27 @@ func (g *guiApp) buildBrowse() fyne.CanvasObject {
 	g.narration = widget.NewLabel("")
 	g.narration.Wrapping = fyne.TextWrapWord
 
+	// Visible verse-span control: [−] count [+]  1 (reset)
+	g.verseSpanLabel = widget.NewLabel(strconv.Itoa(g.verseSpan))
+	g.verseSpanLabel.Alignment = fyne.TextAlignCenter
+	g.verseSpanLabel.TextStyle = fyne.TextStyle{Bold: true}
+	spanMinus := widget.NewButton("−", func() { g.setVerseSpan(g.verseSpan - 1) })
+	spanPlus := widget.NewButton("+", func() { g.setVerseSpan(g.verseSpan + 1) })
+	spanReset := widget.NewButton("1", func() { g.setVerseSpan(1) })
+	spanRow := container.NewHBox(
+		widget.NewLabel("verses:"),
+		spanMinus,
+		g.verseSpanLabel,
+		spanPlus,
+		spanReset,
+	)
+
 	left := container.NewVScroll(g.verseList)
-	right := container.NewBorder(container.NewVBox(g.refLabel), nil, nil, nil,
-		container.NewVScroll(g.narration))
+	right := container.NewBorder(
+		container.NewVBox(g.refLabel, spanRow),
+		nil, nil, nil,
+		container.NewVScroll(g.narration),
+	)
 	split := container.NewHSplit(left, right)
 	split.SetOffset(0.20)
 
@@ -211,24 +233,83 @@ func (g *guiApp) openVerse(book, chap, verse int) {
 			break
 		}
 	}
+	g.verseSelIdx = target
 	g.verseList.Select(target)
 	g.selectVerse(target)
 }
 
 func (g *guiApp) selectVerse(id int) {
-	if g.verses == nil || id < 0 || id >= len(g.verses) {
+	if g.verses == nil || g.narration == nil || g.eng == nil || id < 0 || id >= len(g.verses) {
 		return
 	}
 	vnum := g.verses[id]
 	active, _ := g.eng.ActiveVersionID()
-	txt, ok, _ := g.eng.Store.VerseText(active, model.Ref{
-		VersionID: active, Collection: "bible", Book: g.curBook, Chapter: g.curChap, Verse: vnum,
-	})
-	if ok {
-		g.narration.SetText(txt)
+
+	span := g.verseSpan
+	if span < 1 {
+		span = 1
 	}
-	if b, ok2 := books.ByOrdinal(g.curBook); ok2 {
-		g.refLabel.SetText(fmt.Sprintf("📖 %s %d:%d", b.Name, g.curChap, vnum))
+	b, bOK := books.ByOrdinal(g.curBook)
+	bname := ""
+	if bOK {
+		bname = b.Name
+	}
+
+	// Build a passage spanning span consecutive verses from the selected one.
+	var sb strings.Builder
+	last := id + span - 1
+	if last >= len(g.verses) {
+		last = len(g.verses) - 1
+	}
+	for i := id; i <= last; i++ {
+		v := g.verses[i]
+		txt, ok, _ := g.eng.Store.VerseText(active, model.Ref{
+			VersionID: active, Collection: "bible", Book: g.curBook, Chapter: g.curChap, Verse: v,
+		})
+		if i > id {
+			sb.WriteString("\n\n")
+		}
+		if ok && strings.TrimSpace(txt) != "" {
+			fmt.Fprintf(&sb, "▸ %d  %s", v, txt)
+		} else {
+			fmt.Fprintf(&sb, "▸ %d", v)
+		}
+	}
+	if sb.Len() == 0 {
+		g.narration.SetText("No text.")
+	} else {
+		g.narration.SetText(sb.String())
+	}
+	start := vnum
+	end := g.verses[last]
+	if bname != "" {
+		if end == start {
+			g.refLabel.SetText(fmt.Sprintf("📖 %s %d:%d", bname, g.curChap, start))
+		} else {
+			g.refLabel.SetText(fmt.Sprintf("📖 %s %d:%d–%d", bname, g.curChap, start, end))
+		}
+	}
+	if g.verseSpanLabel != nil {
+		g.verseSpanLabel.SetText(strconv.Itoa(g.verseSpan))
+	}
+}
+
+// setVerseSpan adjusts how many consecutive verses the Browse pane shows,
+// clamped to at least 1, then re-renders the passage.
+func (g *guiApp) setVerseSpan(n int) {
+	if n < 1 {
+		n = 1
+	}
+	if len(g.verses) > 0 && n > len(g.verses) {
+		n = len(g.verses)
+	}
+	g.verseSpan = n
+	if g.verseSpanLabel != nil {
+		g.verseSpanLabel.SetText(strconv.Itoa(n))
+	}
+	// Re-render for the currently selected verse.
+	if g.verseSelIdx >= 0 && g.verseSelIdx < len(g.verses) {
+		g.selectVerse(g.verseSelIdx)
 	}
 }
 

@@ -54,6 +54,13 @@ func (m appModel) viewBrowse() string {
 	sb.WriteString(fmt.Sprintf("  %s%s%s\n\n",
 		styleMuted.Render("Chapter "), rangeLabel, styleDim.Render(" / "+strconv.Itoa(m.verseSpan)+" of "+strconv.Itoa(total))))
 
+	// Visible verse-span control in the reading area: [−] N [+] · 0 reset
+	// so the expand/shrink action is discoverable right where you read.
+	sb.WriteString(fmt.Sprintf("  %s%s%s   %s\n\n",
+		styleMuted.Render("verses:"),
+		styleDim.Render("  [  -"), styleAccent().Render(fmt.Sprintf(" %d ", m.verseSpan)),
+		styleDim.Render("+ ]  0 = reset to 1")))
+
 	// Verse display: the whole visible span (larger, wrapped).
 	for v := m.verse; v <= last; v++ {
 		head := styleAccent().Render(fmt.Sprintf("▸ %d", v))

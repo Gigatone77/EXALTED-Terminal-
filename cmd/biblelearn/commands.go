@@ -12,6 +12,7 @@ import (
 	"github.com/gigatone/biblelearn/internal/bibleimport"
 	"github.com/gigatone/biblelearn/internal/model"
 	"github.com/gigatone/biblelearn/internal/store"
+	"github.com/gigatone/biblelearn/internal/textclean"
 )
 
 func runVersions(dataDir string) {
@@ -326,7 +327,7 @@ func runRead(dataDir string, args []string) {
 		}
 		fmt.Printf("%s %d  (%s)\n\n", r.BookName(), r.Chapter, versionID)
 		for _, v := range ch.Order {
-			fmt.Printf("%3d  %s\n", v, ch.Verses[v])
+			fmt.Printf("%3d  %s\n", v, textclean.HTML(ch.Verses[v]))
 		}
 		return
 	}

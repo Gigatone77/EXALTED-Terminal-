@@ -12,6 +12,7 @@ import (
 	"github.com/gigatone/biblelearn/internal/engine"
 	"github.com/gigatone/biblelearn/internal/model"
 	"github.com/gigatone/biblelearn/internal/store"
+	"github.com/gigatone/biblelearn/internal/textclean"
 )
 
 // tab identifiers.
@@ -79,8 +80,7 @@ func newAppModel(e *engine.Engine) (*appModel, error) {
 		}
 	}
 	if len(m.browseBooks) > 0 {
-		m.book = m.browseBooks[0].Ordinal
-		m.bc, _, _ = e.Store.GetBook(m.activeVersion, "bible", m.book)
+		m.loadBook(m.browseBooks[0].Ordinal)
 	}
 	return m, nil
 }
@@ -131,7 +131,7 @@ func (m *appModel) verseText(chapter, verse int) string {
 		return ""
 	}
 	if ch, ok := m.bc.Chapters[chapter]; ok {
-		return ch.Verses[verse]
+		return textclean.HTML(ch.Verses[verse])
 	}
 	return ""
 }

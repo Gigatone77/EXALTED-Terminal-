@@ -17,6 +17,7 @@ import (
 
 	"github.com/gigatone/biblelearn/internal/collections"
 	"github.com/gigatone/biblelearn/internal/model"
+	"github.com/gigatone/biblelearn/internal/textclean"
 	_ "modernc.org/sqlite"
 )
 
@@ -253,7 +254,7 @@ func (s *Store) VerseText(id string, r model.Ref) (string, bool, error) {
 		return "", false, nil
 	}
 	if txt, found := ch.Verses[r.Verse]; found {
-		return txt, true, nil
+		return textclean.HTML(txt), true, nil
 	}
 	return "", false, nil
 }

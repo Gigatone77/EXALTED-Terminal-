@@ -12,12 +12,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/gigatone/biblelearn/internal/books"
 	"github.com/gigatone/biblelearn/internal/model"
 	"github.com/gigatone/biblelearn/internal/store"
+	"github.com/gigatone/biblelearn/internal/textclean"
 )
 
 const baseURL = "https://bolls.life/get-text/NKJV/"
@@ -104,7 +104,7 @@ func InstallNKJV(ctx context.Context, s *store.Store, version model.Version, pro
 				if v.Verse < 1 {
 					continue
 				}
-				text := strings.TrimSpace(v.Text)
+				text := textclean.HTML(v.Text)
 				if _, ok := ch.Verses[v.Verse]; !ok {
 					ch.Order = append(ch.Order, v.Verse)
 				}

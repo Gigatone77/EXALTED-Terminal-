@@ -1,6 +1,7 @@
 package store
 
 import (
+	"github.com/gigatone/biblelearn/internal/textclean"
 	"github.com/gigatone/biblelearn/internal/words"
 )
 
@@ -33,7 +34,7 @@ func (s *Store) RebuildTermIndex(versionID, collection string) error {
 				continue
 			}
 			for _, vn := range ch.Order {
-				text := ch.Verses[vn]
+				text := textclean.HTML(ch.Verses[vn])
 				for _, tok := range words.Tokenize(text) {
 					if words.IsCommon(tok.Term) {
 						continue

@@ -8,6 +8,7 @@ import (
 
 	"github.com/gigatone/biblelearn/internal/books"
 	"github.com/gigatone/biblelearn/internal/collections"
+	"github.com/gigatone/biblelearn/internal/textclean"
 )
 
 // SearchResult is one full-text search hit.
@@ -63,6 +64,7 @@ func (s *Store) IndexBook(versionID, collection string, bookOrdinal int) error {
 		}
 		for _, vn := range ch.Order {
 			text, ok := ch.Verses[vn]
+			text = textclean.HTML(text)
 			if !ok || strings.TrimSpace(text) == "" {
 				continue
 			}
