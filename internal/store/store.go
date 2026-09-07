@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gigatone/biblelearn/internal/collections"
 	"github.com/gigatone/biblelearn/internal/model"
@@ -124,15 +125,117 @@ func (s *Store) GetVersion(id string) (model.Version, bool, error) {
 	return s.db.getVersion(id)
 }
 
-// RemoveVersion deletes a version from the registry and its archive files.
+// RemoveVersion moves a version to the recoverable trash: its registry row is
+// soft-deleted and its archive directory is relocated under .trash/versions so
+// nothing is permanently destroyed. Use RestoreVersion to bring it back or
+// PurgeVersion to permanently delete it.
 func (s *Store) RemoveVersion(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.sendVersionToTrash(id)
+}
+
+// TrashedVersions lists versions currently in the recoverable trash.
+func (s *Store) TrashedVersions() ([]model.Version, error) {
+	return s.db.listTrashedVersions()
+}
+
+// RestoreVersion brings a trashed version back: its archive directory is
+// moved back into place and its registry row is un-deleted.
+func (s *Store) RestoreVersion(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	dir := filepath.Join(s.verDir, id)
-	if err := os.RemoveAll(dir); err != nil {
+	if _, err := os.Stat(dir); err == nil {
+		return fmt.Errorf("version %q is already installed", id)
+	}
+	rel, ok, err := s.trashVersionDir(id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("version %q not found in trash", id)
+	}
+	if err := os.Rename(rel, dir); err != nil {
+		return err
+	}
+	return s.db.restoreDeletedVersion(id)
+}
+
+// PurgeVersion permanently deletes a trashed version (archive + registry row).
+// This is the single explicit escape hatch from the trash; built-in versions
+// are protected by the engine layer.
+func (s *Store) PurgeVersion(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rel, ok, err := s.trashVersionDir(id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("version %q not found in trash", id)
+	}
+	if err := os.RemoveAll(rel); err != nil {
 		return err
 	}
 	return s.db.deleteVersion(id)
+}
+
+// trashVersionsRoot returns the hidden trash directory inside the data dir.
+func (s *Store) trashVersionsRoot() string {
+	return filepath.Join(s.dir, ".trash", "versions")
+}
+
+// trashVersionDir resolves the relocatable trash directory for a version id
+// (created once per trash) and reports whether it exists.
+func (s *Store) trashVersionDir(id string) (string, bool, error) {
+	root := s.trashVersionsRoot()
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	prefix := id + "."
+	for _, e := range entries {
+		if e.IsDir() && strings.HasPrefix(e.Name(), prefix) {
+			return filepath.Join(root, e.Name()), true, nil
+		}
+	}
+	return "", false, nil
+}
+
+// sendVersionToTrash relocates a version's archive into the trash with a
+// timestamped, collision-free directory name before soft-deleting its row.
+func (s *Store) sendVersionToTrash(id string) error {
+	dir := filepath.Join(s.verDir, id)
+	if _, err := os.Stat(dir); err != nil {
+		return fmt.Errorf("version %q has no archive", id)
+	}
+	root := s.trashVersionsRoot()
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return err
+	}
+	name := id + "." + time.Now().Format("20060102-150405")
+	rel := filepath.Join(root, name)
+	for {
+		if _, err := os.Stat(rel); os.IsNotExist(err) {
+			break
+		}
+		name = id + "." + fmt.Sprintf("%d", time.Now().UnixNano())
+		rel = filepath.Join(root, name)
+	}
+	if err := os.Rename(dir, rel); err != nil {
+		return err
+	}
+	return s.db.softDeleteVersion(id)
+}
+
+// Checkpoint flushes the WAL into the main database file so a file-level
+// backup of the data dir is self-consistent.
+func (s *Store) Checkpoint() error {
+	return s.db.checkpoint()
 }
 
 // ---------------------------------------------------------------------------
@@ -170,22 +273,35 @@ func (s *Store) PutBook(id string, collection string, bookOrdinal int, content *
 		return err
 	}
 	path := filepath.Join(dir, bookFileName(bookOrdinal))
-	f, err := os.Create(path)
+	tmp, err := os.CreateTemp(dir, ".bk-*.tmp")
 	if err != nil {
 		return err
 	}
-	gz := gzip.NewWriter(f)
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	gz := gzip.NewWriter(tmp)
 	enc := json.NewEncoder(gz)
 	if err := enc.Encode(content); err != nil {
 		gz.Close()
-		f.Close()
+		tmp.Close()
 		return err
 	}
 	if err := gz.Close(); err != nil {
-		f.Close()
+		tmp.Close()
 		return err
 	}
-	return f.Close()
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	// Atomic replace so a crash never leaves a truncated .json.gz.
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	return syncDir(dir)
 }
 
 // GetBook loads a book's full text for a version and collection, if present.
@@ -301,7 +417,38 @@ func writeJSONFile(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".json-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	return syncDir(dir)
+}
+
+// syncDir fsyncs a directory so a prior rename is durable on disk.
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }
 
 // GetSetting reads a named preference.

@@ -23,8 +23,6 @@ func ImportBookFromPDF(s *store.Store, versionID, collection string, bookOrdinal
 	if err != nil {
 		return 0, err
 	}
-	bookName := ""
-	_ = bookName
 	bc, verses := parseBibleBook(versionID, collection, bookOrdinal, text)
 	if err := s.PutBook(versionID, collection, bookOrdinal, bc); err != nil {
 		return 0, err
@@ -220,5 +218,3 @@ func parseBibleBook(versionID, collection string, bookOrdinal int, text string) 
 	}
 	return bc, total
 }
-
-// Needed to avoid unused import warning for os.

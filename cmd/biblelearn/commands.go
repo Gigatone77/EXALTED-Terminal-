@@ -9,16 +9,58 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gigatone/biblelearn/internal/backup"
 	"github.com/gigatone/biblelearn/internal/bibleimport"
+	"github.com/gigatone/biblelearn/internal/engine"
 	"github.com/gigatone/biblelearn/internal/model"
 	"github.com/gigatone/biblelearn/internal/store"
 	"github.com/gigatone/biblelearn/internal/textclean"
 )
 
-func runVersions(dataDir string) {
+func runVersions(dataDir string, args []string) {
 	e, err := openEngine(dataDir)
 	must(err)
 	defer e.Close()
+	if len(args) > 0 {
+		switch args[0] {
+		case "trash":
+			vs, err := e.TrashedVersions()
+			must(err)
+			if len(vs) == 0 {
+				fmt.Println("Nothing in the version trash.")
+				return
+			}
+			fmt.Printf("%-8s %-28s %s\n", "ID", "Name", "Source")
+			for _, v := range vs {
+				fmt.Printf("%-8s %-28s %s\n", v.ID, trunc(v.Name, 28), v.Source)
+			}
+			fmt.Println("\nrestore: exalted versions restore <ID>   purge: exalted versions purge <ID>")
+			return
+		case "restore":
+			if len(args) < 2 {
+				fatal("usage: exalted versions restore <ID>")
+			}
+			must(e.RestoreVersion(args[1]))
+			fmt.Printf("Restored version %q.\n", args[1])
+			return
+		case "purge":
+			if len(args) < 2 {
+				fatal("usage: exalted versions purge <ID>")
+			}
+			must(e.PurgeVersion(args[1]))
+			fmt.Printf("Permanently purged version %q.\n", args[1])
+			return
+		case "rm", "remove", "uninstall":
+			if len(args) < 2 {
+				fatal("usage: exalted versions rm <ID>")
+			}
+			must(e.RemoveVersion(args[1]))
+			fmt.Printf("Moved version %q to trash (restore: exalted versions restore %s).\n", args[1], args[1])
+			return
+		default:
+			fatal("usage: exalted versions [trash | restore <ID> | purge <ID> | rm <ID>]")
+		}
+	}
 	vs, err := e.ListVersions()
 	must(err)
 	active, _ := e.ActiveVersionID()
@@ -65,14 +107,21 @@ func runInstallPDF(ctx context.Context, dataDir string, args []string) {
 	opt := e.PDFOption(func(book string, verses int) {
 		fmt.Printf("  %-34s %6d verses\n", book, verses)
 	})
-	var n int
+	var res engine.PDFInstallResult
 	if isZip(path) {
-		n, err = e.InstallPDFZip(ctx, v, path, opt)
+		res, err = e.InstallPDFZip(ctx, v, path, opt)
 	} else {
-		n, err = e.InstallPDFDir(ctx, v, path, opt)
+		res, err = e.InstallPDFDir(ctx, v, path, opt)
 	}
 	must(err)
-	fmt.Printf("\nImported %d verses into version %q.\n", n, *id)
+	fmt.Printf("\nImported %d verses into version %q.\n", res.Verses, *id)
+	if len(res.Skipped) > 0 {
+		fmt.Printf("Books skipped (failed verification, not imported):\n")
+		for _, s := range res.Skipped {
+			fmt.Printf("  - %s\n", s)
+		}
+		fmt.Println("You can re-run to retry; nothing is registered unless at least one book parsed.")
+	}
 }
 
 func runInstallText(ctx context.Context, dataDir string, args []string) {
@@ -451,14 +500,14 @@ func runIndex(dataDir string, args []string) {
 
 func runNotes(dataDir string, args []string) {
 	if len(args) < 1 {
-		fatal("usage: exalted notes list|add|rm")
+		fatal("usage: exalted notes list|add|rm|trash|restore|purge")
 	}
 	e, err := openEngine(dataDir)
 	must(err)
 	defer e.Close()
+	versionID, _ := e.ActiveVersionID()
 	switch args[0] {
 	case "list":
-		versionID, _ := e.ActiveVersionID()
 		ns, err := e.Store.ListNotes(versionID)
 		must(err)
 		for _, n := range ns {
@@ -473,7 +522,6 @@ func runNotes(dataDir string, args []string) {
 		if !ok {
 			fatal("bad reference")
 		}
-		versionID, _ := e.ActiveVersionID()
 		body := ""
 		if args[0] == "add" {
 			body = strings.Join(args[2:], " ")
@@ -484,9 +532,62 @@ func runNotes(dataDir string, args []string) {
 		note := store.Note{VersionID: versionID, Book: r.Book, Chapter: r.Chapter, Verse: r.Verse, Body: body}
 		must(e.Store.SaveNote(note))
 		fmt.Println("saved")
+	case "trash":
+		ns, err := e.Store.ListTrashedNotes(versionID)
+		must(err)
+		if len(ns) == 0 {
+			fmt.Println("Nothing in the note trash.")
+			return
+		}
+		for _, n := range ns {
+			ref := model.Ref{VersionID: versionID, Collection: "bible", Book: n.Book, Chapter: n.Chapter, Verse: n.Verse}
+			fmt.Printf("%s\n  %s\n", ref.String(), trunc(n.Body, 100))
+		}
+		fmt.Println("\nrestore: exalted notes restore <REF>   purge: exalted notes purge")
+	case "restore":
+		if len(args) < 2 {
+			fatal("usage: exalted notes restore <REF>")
+		}
+		r, ok := model.ParseRef(args[1])
+		if !ok {
+			fatal("bad reference")
+		}
+		restored, err := e.Store.RestoreNote(versionID, r.Book, r.Chapter, r.Verse)
+		must(err)
+		if restored {
+			fmt.Println("restored")
+		} else {
+			fmt.Println("no trashed note at that reference")
+		}
+	case "purge":
+		n, err := e.Store.PurgeTrashedNotes("")
+		must(err)
+		fmt.Printf("purged %d trashed note(s)\n", n)
 	default:
-		fatal("usage: exalted notes list|add|rm")
+		fatal("usage: exalted notes list|add|rm|trash|restore|purge")
 	}
+}
+
+// --- backup ---
+
+func runBackup(dataDir string, args []string) {
+	fs := flag.NewFlagSet("backup", flag.ExitOnError)
+	to := fs.String("to", "", "destination directory for backups (default ~/biblelearn-backups)")
+	fs.Parse(args)
+	destRoot := *to
+	if destRoot == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fatal(err.Error())
+		}
+		destRoot = filepath.Join(home, "biblelearn-backups")
+	}
+	s, err := store.Open(dataDir)
+	must(err)
+	defer s.Close()
+	dest, err := backup.Snapshot(dataDir, destRoot, s.Checkpoint)
+	must(err)
+	fmt.Printf("Backup created: %s\n", dest)
 }
 
 // --- small helpers ---

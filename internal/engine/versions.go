@@ -133,7 +133,9 @@ func (e *Engine) AvailableVersions() ([]string, error) {
 }
 
 // InstallVersionText registers a version and imports its text from a string
-// (USFM or plain text, auto-detected), returning verses imported.
+// (USFM or plain text, auto-detected), returning verses imported. The version
+// is only registered when at least one verse was successfully parsed, so a bad
+// file can never leave an empty phantom version behind.
 func (e *Engine) InstallVersionText(ctx context.Context, v model.Version, content string) (int, error) {
 	if v.ID == "" {
 		return 0, fmt.Errorf("version ID required")
@@ -142,28 +144,39 @@ func (e *Engine) InstallVersionText(ctx context.Context, v model.Version, conten
 	if coll == "" {
 		coll = "bible"
 	}
-	if err := e.Store.RegisterVersion(v); err != nil {
-		return 0, err
+	if strings.TrimSpace(content) == "" {
+		return 0, fmt.Errorf("no content to import")
 	}
 	opt := bibleimport.ImportOptions{Collection: coll}
+	var n int
+	var err error
 	if bibleimport.IsUSFM(content) {
-		n, err := bibleimport.ImportUSFMText(e.Store, v.ID, content, opt)
-		if err != nil {
-			return n, err
-		}
-		_ = e.RebuildTerms(v.ID, coll)
-		return n, nil
+		n, err = bibleimport.ImportUSFMText(e.Store, v.ID, content, opt)
+	} else {
+		n, err = bibleimport.ImportPlainText(e.Store, v.ID, content, opt)
 	}
-	n, err := bibleimport.ImportPlainText(e.Store, v.ID, content, opt)
-	if err == nil {
-		_ = e.RebuildTerms(v.ID, coll)
+	if err == nil && n == 0 {
+		return 0, fmt.Errorf("no verses recognized — not a Bible text file?")
 	}
-	return n, err
+	if err != nil {
+		return n, err
+	}
+	if err := e.Store.RegisterVersion(v); err != nil {
+		return n, err
+	}
+	_ = e.RebuildTerms(v.ID, coll)
+	return n, nil
 }
 
-// RemoveVersion uninstalls a version and its data.
+// RemoveVersion moves a version to the recoverable trash (nothing is deleted:
+// the archive is relocated under .trash/versions and the registry row is
+// soft-deleted). Use RestoreVersion to bring it back.
 func (e *Engine) RemoveVersion(id string) error {
-	if v, ok, _ := e.Store.GetVersion(id); ok && v.Builtin {
+	v, ok, _ := e.Store.GetVersion(id)
+	if !ok {
+		return fmt.Errorf("version %q not installed", id)
+	}
+	if v.Builtin {
 		return fmt.Errorf("cannot remove built-in version %q", id)
 	}
 	active, _ := e.ActiveVersionID()
@@ -180,6 +193,25 @@ func (e *Engine) RemoveVersion(id string) error {
 		}
 	}
 	return nil
+}
+
+// TrashedVersions lists versions currently in the recoverable trash.
+func (e *Engine) TrashedVersions() ([]model.Version, error) {
+	return e.Store.TrashedVersions()
+}
+
+// RestoreVersion moves a trashed version back into the active installs.
+func (e *Engine) RestoreVersion(id string) error {
+	return e.Store.RestoreVersion(id)
+}
+
+// PurgeVersion permanently deletes a trashed version. Built-in versions are
+// protected.
+func (e *Engine) PurgeVersion(id string) error {
+	if v, ok, _ := e.Store.GetVersion(id); ok && v.Builtin {
+		return fmt.Errorf("cannot purge built-in version %q", id)
+	}
+	return e.Store.PurgeVersion(id)
 }
 
 // FetchFromArchive finds candidate Bible items on the Internet Archive.
@@ -329,17 +361,29 @@ func (e *Engine) PDFOption(progress func(book string, verses int)) PDFOption {
 	return PDFOption{Progress: progress}
 }
 
+// PDFInstallResult reports the outcome of a PDF import, including any books
+// whose extraction failed verse verification (so no empty version is ever
+// silently registered).
+type PDFInstallResult struct {
+	// Verses is the number of verses successfully stored.
+	Verses int
+	// Skipped lists human-readable book labels that failed to parse, e.g.
+	// "3 Leviticus (no verses extracted)". Normal files import with no skips.
+	Skipped []string
+}
+
 // InstallPDFDir installs a version from a directory of per-book PDF files. Each
 // file's name must contain a 1-based book number (e.g. "43.pdf", "1 Gen.pdf",
-// "book-40.pdf"), which is mapped to the collection's book ordinal.
-func (e *Engine) InstallPDFDir(ctx context.Context, v model.Version, dir string, opt PDFOption) (int, error) {
+// "book-40.pdf"), which is mapped to the collection's book ordinal. The version
+// is registered only when at least one book parsed.
+func (e *Engine) InstallPDFDir(ctx context.Context, v model.Version, dir string, opt PDFOption) (PDFInstallResult, error) {
 	coll := v.Collection
 	if coll == "" {
 		coll = "bible"
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return 0, err
+		return PDFInstallResult{}, err
 	}
 	type job struct {
 		ord  int
@@ -360,45 +404,53 @@ func (e *Engine) InstallPDFDir(ctx context.Context, v model.Version, dir string,
 	}
 	sort.Slice(jobs, func(i, j int) bool { return jobs[i].ord < jobs[j].ord })
 	if len(jobs) == 0 {
-		return 0, fmt.Errorf("no book PDFs found in %s", dir)
+		return PDFInstallResult{}, fmt.Errorf("no book PDFs found in %s", dir)
 	}
-	if err := e.Store.RegisterVersion(v); err != nil {
-		return 0, err
-	}
-	total := 0
+	clist := collections.ByIDSafe(coll)
+	res := PDFInstallResult{}
 	for _, j := range jobs {
 		if err := ctx.Err(); err != nil {
-			return total, err
+			return res, err
 		}
-		n, err := pdfimport.ImportBookFromPDF(e.Store, v.ID, coll, j.ord, j.path,
+		n, perr := pdfimport.ImportBookFromPDF(e.Store, v.ID, coll, j.ord, j.path,
 			func(book string, verses int) {
 				if opt.Progress != nil {
 					opt.Progress(book, verses)
 				}
 			})
-		if err != nil {
-			// Log-and-continue: a single failed book shouldn't abort the rest.
+		if perr != nil || n == 0 {
+			name := clist[j.ord-1].Name
+			reason := "parse error"
+			if perr == nil {
+				reason = "no verses extracted"
+			}
+			res.Skipped = append(res.Skipped, fmt.Sprintf("%d %s (%s)", j.ord, name, reason))
 			continue
 		}
-		total += n
+		res.Verses += n
 	}
-	if total == 0 {
-		return 0, fmt.Errorf("no verses could be extracted from PDFs")
+	if res.Verses == 0 {
+		return res, fmt.Errorf("no verses could be extracted from PDFs")
+	}
+	if err := e.Store.RegisterVersion(v); err != nil {
+		return res, err
 	}
 	_ = e.RebuildTerms(v.ID, coll)
-	return total, nil
+	return res, nil
 }
 
 // InstallPDFZip installs a version from a zip of per-book PDFs (e.g. the phone
-// Bibles like "English-PDF.zip" with "English-PDF/43.pdf").
-func (e *Engine) InstallPDFZip(ctx context.Context, v model.Version, zipPath string, opt PDFOption) (int, error) {
+// Bibles like "English-PDF.zip" with "English-PDF/43.pdf"). The archive is
+// validated structurally (entries must be per-book PDFs with a usable number)
+// before any version is registered.
+func (e *Engine) InstallPDFZip(ctx context.Context, v model.Version, zipPath string, opt PDFOption) (PDFInstallResult, error) {
 	coll := v.Collection
 	if coll == "" {
 		coll = "bible"
 	}
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
-		return 0, err
+		return PDFInstallResult{}, err
 	}
 	defer zr.Close()
 	type job struct {
@@ -436,21 +488,18 @@ func (e *Engine) InstallPDFZip(ctx context.Context, v model.Version, zipPath str
 	}
 	sort.Slice(jobs, func(i, j int) bool { return jobs[i].ord < jobs[j].ord })
 	if len(jobs) == 0 {
-		return 0, fmt.Errorf("no book PDFs found in %s", zipPath)
-	}
-	if err := e.Store.RegisterVersion(v); err != nil {
-		return 0, err
+		return PDFInstallResult{}, fmt.Errorf("no book PDFs found in %s", zipPath)
 	}
 	// Write PDFs to a temp dir then run the dir importer.
 	tmp, err := os.MkdirTemp("", "biblepdf-*")
 	if err != nil {
-		return 0, err
+		return PDFInstallResult{}, err
 	}
 	defer os.RemoveAll(tmp)
 	for _, j := range jobs {
 		name := filepath.Join(tmp, fmt.Sprintf("%d.pdf", j.ord))
 		if err := os.WriteFile(name, j.data, 0o644); err != nil {
-			return 0, err
+			return PDFInstallResult{}, err
 		}
 	}
 	return e.InstallPDFDir(ctx, v, tmp, opt)

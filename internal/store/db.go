@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -113,7 +114,52 @@ func migrate(db *sqlDB) error {
 			return fmt.Errorf("migrate: %w", err)
 		}
 	}
+	// Soft-delete columns power the recoverable/undoable trash (notes +
+	// versions). Added idempotently for databases created before v0.2.
+	if err := ensureColumn(db, "notes", "deleted_at", "TEXT"); err != nil {
+		return fmt.Errorf("migrate notes.deleted_at: %w", err)
+	}
+	if err := ensureColumn(db, "versions", "deleted_at", "TEXT"); err != nil {
+		return fmt.Errorf("migrate versions.deleted_at: %w", err)
+	}
 	return nil
+}
+
+// ensureColumn adds a column to an existing table when it is missing. It is
+// a no-op when the column already exists, so migrations stay idempotent.
+func ensureColumn(db *sqlDB, table, col, decl string) error {
+	rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return err
+		}
+		if name == col {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, col, decl))
+	return err
+}
+
+// checkpoint flushes the WAL into the main database file so a file-level
+// snapshot of app.db is self-consistent without its -wal/-shm companions.
+func (db *sqlDB) checkpoint() error {
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	_, err = conn.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
+	return err
 }
 
 // repairContentlessFTS detects a verse_fts virtual table that was created as a
@@ -151,13 +197,14 @@ func (db *sqlDB) upsertVersion(v model.Version) error {
 			source=excluded.source,
 			source_url=excluded.source_url,
 			builtin=excluded.builtin,
-			enabled=excluded.enabled`,
+			enabled=excluded.enabled,
+			deleted_at=NULL`,
 		v.ID, v.Name, v.Lang, v.Source, v.SourceURL, b2i(v.Builtin), b2i(v.Enabled))
 	return err
 }
 
 func (db *sqlDB) listVersions() ([]model.Version, error) {
-	rows, err := db.Query(`SELECT id, name, lang, source, source_url, builtin, enabled FROM versions ORDER BY id`)
+	rows, err := db.Query(`SELECT id, name, lang, source, source_url, builtin, enabled FROM versions WHERE deleted_at IS NULL ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +224,7 @@ func (db *sqlDB) listVersions() ([]model.Version, error) {
 }
 
 func (db *sqlDB) getVersion(id string) (model.Version, bool, error) {
-	row := db.QueryRow(`SELECT id, name, lang, source, source_url, builtin, enabled FROM versions WHERE id=?`, id)
+	row := db.QueryRow(`SELECT id, name, lang, source, source_url, builtin, enabled FROM versions WHERE id=? AND deleted_at IS NULL`, id)
 	var v model.Version
 	var bi, en int
 	err := row.Scan(&v.ID, &v.Name, &v.Lang, &v.Source, &v.SourceURL, &bi, &en)
@@ -197,6 +244,40 @@ func (db *sqlDB) deleteVersion(id string) error {
 	defer db.writeMu.Unlock()
 	_, err := db.Exec(`DELETE FROM versions WHERE id=?`, id)
 	return err
+}
+
+func (db *sqlDB) softDeleteVersion(id string) error {
+	db.writeMu.Lock()
+	defer db.writeMu.Unlock()
+	_, err := db.Exec(`UPDATE versions SET deleted_at=datetime('now') WHERE id=? AND deleted_at IS NULL`, id)
+	return err
+}
+
+func (db *sqlDB) restoreDeletedVersion(id string) error {
+	db.writeMu.Lock()
+	defer db.writeMu.Unlock()
+	_, err := db.Exec(`UPDATE versions SET deleted_at=NULL WHERE id=?`, id)
+	return err
+}
+
+func (db *sqlDB) listTrashedVersions() ([]model.Version, error) {
+	rows, err := db.Query(`SELECT id, name, lang, source, source_url, builtin, enabled FROM versions WHERE deleted_at IS NOT NULL ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.Version
+	for rows.Next() {
+		var v model.Version
+		var bi, en int
+		if err := rows.Scan(&v.ID, &v.Name, &v.Lang, &v.Source, &v.SourceURL, &bi, &en); err != nil {
+			return nil, err
+		}
+		v.Builtin = bi > 0
+		v.Enabled = en > 0
+		out = append(out, v)
+	}
+	return out, rows.Err()
 }
 
 func b2i(b bool) int {

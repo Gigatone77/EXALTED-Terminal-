@@ -118,7 +118,6 @@ func ScheduleNext(m MemoryState, quality int) MemoryState {
 		m.Reps++
 		m.Due = time.Now().Add(time.Duration(m.IntervalDays * 24 * float64(time.Hour)))
 	}
-	_ = q
 	return m
 }
 

@@ -12,6 +12,9 @@ import (
 	"github.com/gigatone/biblelearn/internal/engine"
 )
 
+// version is injected at build time via -ldflags "-X main.version=$(VERSION)".
+var version = "dev"
+
 const usage = `EXALTED Terminal — offline Bible learning & study tool
 
 Usage:
@@ -31,8 +34,11 @@ Commands:
   search QUERY      Full-text search across installed versions
   terms PREFIX      Suggest/autocomplete terms for the search box
   index             Rebuild the term & search index for installed versions
-  notes             Manage study notes
+  notes             Manage study notes (trash is recoverable)
+  versions          List versions; rm/restore/purge trash a version
+  backup            Create a flash-safe, fsynced snapshot of your data
   serve             Serve the local web/app UI
+  version           Print the Exalted version
   help              Show this help
 
 Global flags:
@@ -74,7 +80,7 @@ func main() {
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	case "versions":
-		runVersions(dataDir)
+		runVersions(dataDir, rest)
 	case "install-pdf":
 		runInstallPDF(ctx, dataDir, rest)
 	case "install-text":
@@ -99,6 +105,10 @@ func main() {
 		runIndex(dataDir, rest)
 	case "notes":
 		runNotes(dataDir, rest)
+	case "backup":
+		runBackup(dataDir, rest)
+	case "version", "--version", "-V":
+		fmt.Printf("EXALTED Terminal %s\n", version)
 	case "serve":
 		runServe(dataDir, rest)
 	default:

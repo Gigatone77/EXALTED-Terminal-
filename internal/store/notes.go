@@ -10,28 +10,10 @@ type Note struct {
 	UpdatedAt string
 }
 
-// SaveNote upserts the note body for a verse (empty body deletes it).
-func (s *Store) SaveNote(n Note) error {
-	s.db.writeMu.Lock()
-	defer s.db.writeMu.Unlock()
-	if n.Body == "" {
-		_, err := s.db.Exec(`DELETE FROM notes WHERE version_id=? AND book=? AND chapter=? AND verse=?`,
-			n.VersionID, n.Book, n.Chapter, n.Verse)
-		return err
-	}
-	_, err := s.db.Exec(`
-		INSERT INTO notes(version_id, book, chapter, verse, body, updated_at)
-		VALUES(?,?,?,?,?,datetime('now'))
-		ON CONFLICT(version_id, book, chapter, verse) DO UPDATE SET
-			body=excluded.body, updated_at=datetime('now')`,
-		n.VersionID, n.Book, n.Chapter, n.Verse, n.Body)
-	return err
-}
-
-// GetNote returns the note for a verse, if any.
+// GetNote returns the active (non-trashed) note for a verse, if any.
 func (s *Store) GetNote(versionID string, book, chapter, verse int) (Note, bool, error) {
 	row := s.db.QueryRow(`SELECT version_id, book, chapter, verse, body, updated_at
-		FROM notes WHERE version_id=? AND book=? AND chapter=? AND verse=?`,
+		FROM notes WHERE version_id=? AND book=? AND chapter=? AND verse=? AND deleted_at IS NULL`,
 		versionID, book, chapter, verse)
 	var n Note
 	err := row.Scan(&n.VersionID, &n.Book, &n.Chapter, &n.Verse, &n.Body, &n.UpdatedAt)
@@ -44,14 +26,52 @@ func (s *Store) GetNote(versionID string, book, chapter, verse int) (Note, bool,
 	return n, true, nil
 }
 
-// ListNotes returns all notes for a version.
+// ListNotes returns all active notes for a version.
 func (s *Store) ListNotes(versionID string) ([]Note, error) {
 	rows, err := s.db.Query(`SELECT version_id, book, chapter, verse, body, updated_at
-		FROM notes WHERE version_id=? ORDER BY book, chapter, verse`, versionID)
+		FROM notes WHERE version_id=? AND deleted_at IS NULL ORDER BY book, chapter, verse`, versionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	return scanNotes(rows)
+}
+
+// ListTrashedNotes returns notes currently in the recoverable trash.
+func (s *Store) ListTrashedNotes(versionID string) ([]Note, error) {
+	rows, err := s.db.Query(`SELECT version_id, book, chapter, verse, body, updated_at
+		FROM notes WHERE version_id=? AND deleted_at IS NOT NULL ORDER BY book, chapter, verse`, versionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanNotes(rows)
+}
+
+// PurgeTrashedNotes permanently removes trashed notes for a version ("" = all
+// versions). This is the explicit escape hatch from the trash.
+func (s *Store) PurgeTrashedNotes(versionID string) (int64, error) {
+	s.db.writeMu.Lock()
+	defer s.db.writeMu.Unlock()
+	if versionID != "" {
+		res, err := s.db.Exec(`DELETE FROM notes WHERE deleted_at IS NOT NULL AND version_id=?`, versionID)
+		if err != nil {
+			return 0, err
+		}
+		return res.RowsAffected()
+	}
+	res, err := s.db.Exec(`DELETE FROM notes WHERE deleted_at IS NOT NULL`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func scanNotes(rows interface {
+	Next() bool
+	Scan(...any) error
+	Err() error
+}) ([]Note, error) {
 	var out []Note
 	for rows.Next() {
 		var n Note

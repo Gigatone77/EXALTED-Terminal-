@@ -91,10 +91,26 @@ exalted fetch-archive <query>   # install a public-domain Bible from Internet Ar
 exalted notes                   # manage study notes
 exalted terms "jo"              # autocomplete terms for search
 exalted index                   # rebuild the search index
+exalted backup [--to DIR]       # flash-safe, fsynced snapshot of your data
+exalted version                 # print the Exalted version
 exalted serve                   # local web/app UI
 exalted plugin list             # manage plugins (e.g. church)
 exalted church <zip>            # find nearby churches
 exalted help                    # full usage
+```
+
+Deletes are recoverable — nothing is destroyed instantly:
+
+```sh
+exalted notes add "Gen 3:16" "study note"  # add a note
+exalted notes rm "Gen 3:16"                 # -> note trash (recoverable)
+exalted notes trash                         # list trashed notes
+exalted notes restore "Gen 3:16"            # bring a note back
+exalted notes purge                         # permanently empty the note trash
+exalted versions rm NKJV                    # -> version trash (recoverable)
+exalted versions trash                      # list trashed versions
+exalted versions restore NKJV               # bring a version back
+exalted versions purge NKJV                 # permanently delete a trashed version
 ```
 
 ### Stock versions
@@ -107,6 +123,10 @@ exalted help                    # full usage
 
 Data lives in `~/.biblelearn` (override with `--data DIR`). The bundled KJV is
 seeded idempotently (it will not overwrite existing data).
+
+`exalted backup` snapshots everything into `~/biblelearn-backups` (or `--to
+DIR`) with an fsynced, atomic staging — safe to put on a USB stick. SQLite is
+checkpointed first so `app.db` is self-consistent in the backup.
 
 ## Development
 
