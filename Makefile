@@ -6,6 +6,7 @@
 #   make install       Install to ~/.local/bin
 #   make gui           Build the graphical (Fyne) edition -> bin/exalted-gui
 #   make appimage      Build a portable Linux AppImage -> dist/EXALTED_Terminal.AppImage
+#   make apk           Build Android arm64 APK -> dist/exalted-<version>-android-arm64.apk
 #   make test          Run unit tests
 #   make tidy          gofmt + go mod tidy
 #
@@ -14,6 +15,12 @@
 BINARY := exalted
 VERSION ?= 0.2.0
 LDFLAGS := -s -w -X main.version=$(VERSION)
+
+# Android cross-build: NDK >= r19c; arm64 only (modern NDKs dropped old
+# arm/386 clangs). The desktop CGO_* flags must be cleared so Homebrew's
+# x86-64 libs never leak into the aarch64 link.
+ANDROID_NDK_HOME ?= /var/home/Gigatone/Android/android-ndk-r27c
+APK := dist/$(BINARY)-$(VERSION)-android-arm64.apk
 
 GO      ?= go
 GOOS    := $(shell $(GO) env GOOS)
@@ -25,7 +32,7 @@ GUIAPP := bin/exalted-gui
 APPIMAGE := dist/EXALTED_Terminal-x86_64.AppImage
 APPIMAGETOOL ?= /var/home/Gigatone/tools/appimagetool
 
-.PHONY: build build-windows build-all install gui appimage test tidy clean
+.PHONY: build build-windows build-all install gui appimage apk test test-gui tidy clean
 
 build:
 	@mkdir -p bin
@@ -58,6 +65,21 @@ gui:
 appimage: gui
 	./scripts/package-appimage.sh
 	@echo "built $(APPIMAGE)"
+
+apk:
+	@mkdir -p dist
+	@bash -c '. scripts/env.sh && \
+	  export PATH="$$(go env GOPATH)/bin:$$PATH" && \
+	  export ANDROID_NDK_HOME="$(ANDROID_NDK_HOME)" && \
+	  unset CGO_CFLAGS CGO_CPPFLAGS CGO_CXXFLAGS CGO_LDFLAGS PKG_CONFIG_PATH && \
+	  fyne package -os android/arm64 \
+	    --app-id com.gigatone.biblelearn \
+	    --name $(BINARY) \
+	    --icon $(abspath cmd/exalted-gui/icon.png) \
+	    --source-dir $(abspath cmd/exalted-gui) \
+	    --app-version $(VERSION) --app-build 1'
+	@cp cmd/exalted-gui/$(BINARY).apk $(APK)
+	@echo "built $(APK)"
 
 test:
 	$(GO) test $(GO_FLAGS) ./cmd/biblelearn/... ./internal/...

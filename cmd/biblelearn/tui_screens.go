@@ -15,41 +15,18 @@ import (
 // navigation plus note toggling.
 func (m *appModel) handleBrowseKey(key string) tea.Model {
 	switch key {
-	case "j":
-		vs, _ := m.currentVerses()
-		if m.verse < len(vs) {
-			m.verse++
-		}
-	case "k":
-		if m.verse > 1 {
-			m.verse--
-		}
 	case "up":
-		// Expand the visible verse span (show more lines).
-		m.setVerseSpan(m.verseSpan + 1)
-	case "down":
 		// Shrink the visible verse span (show fewer lines).
 		m.setVerseSpan(m.verseSpan - 1)
+	case "down":
+		// Expand the visible verse span (show more lines).
+		m.setVerseSpan(m.verseSpan + 1)
 	case "left", "h":
-		if m.verse > 1 {
-			m.verse--
-		} else if m.chapter > 1 {
-			m.chapter--
-			vs, _ := m.currentVerses()
-			if len(vs) > 0 {
-				m.verse = vs[len(vs)-1]
-			}
-		}
+		// Flip back a full page (verseSpan verses).
+		m.pageBackward()
 	case "right", "l":
-		vs, _ := m.currentVerses()
-		if m.verse < len(vs) {
-			m.verse++
-		} else {
-			if b, ok := books.ByOrdinal(m.book); ok && m.chapter < b.Chapters {
-				m.chapter++
-				m.verse = 1
-			}
-		}
+		// Flip forward a full page (verseSpan verses).
+		m.pageForward()
 	case "n":
 		// next chapter
 		if b, ok := books.ByOrdinal(m.book); ok && m.chapter < b.Chapters {
@@ -97,6 +74,43 @@ func (m *appModel) setVerseSpan(n int) {
 	}
 	m.verseSpan = n
 	m.msg = fmt.Sprintf("Showing %d verse(s) from %s.", m.verseSpan, m.currentRef().String())
+}
+
+// pageForward flips a page proportional to the current expansion: it advances
+// by verseSpan verses at once (the whole visible page), spilling into the next
+// chapter when the current one runs out.
+func (m *appModel) pageForward() {
+	vs, _ := m.currentVerses()
+	total := len(vs)
+	if m.verse+m.verseSpan <= total {
+		m.verse += m.verseSpan
+		return
+	}
+	if b, ok := books.ByOrdinal(m.book); ok && m.chapter < b.Chapters {
+		m.chapter++
+		m.verse = 1
+	} else if m.verse < total {
+		m.verse = total
+	}
+}
+
+// pageBackward flips back a full visible page (verseSpan verses), landing on
+// the last full page of the previous chapter when the current one starts.
+func (m *appModel) pageBackward() {
+	if m.verse-m.verseSpan >= 1 {
+		m.verse -= m.verseSpan
+		return
+	}
+	if m.chapter > 1 {
+		m.chapter--
+		if vs, _ := m.currentVerses(); len(vs) > m.verseSpan {
+			m.verse = len(vs) - m.verseSpan + 1
+		} else {
+			m.verse = 1
+		}
+	} else if m.verse > 1 {
+		m.verse = 1
+	}
 }
 
 func (m *appModel) moveBook(delta int) {
@@ -171,11 +185,11 @@ func (m *appModel) handleNotesKey(key string) tea.Model {
 	switch key {
 	case "q", "esc":
 		m.tab = tabBrowse
-	case "up", "k":
+	case "up":
 		if m.noteCh > 0 {
 			m.noteCh--
 		}
-	case "down", "j":
+	case "down":
 		if m.noteCh < len(m.notes)-1 {
 			m.noteCh++
 		}
@@ -232,7 +246,7 @@ func (m appModel) footer() string {
 	var hints string
 	switch m.tab {
 	case tabBrowse:
-		hints = "↑ expand ↓ shrink · j/k verses · ←→ chapters · p/o books · 0 span=1 · c note · s memorize · 1-4 tabs"
+		hints = "↓ expand ↑ shrink · ←→ page flips (span-sized) · n chapter · p/o books · 0 span=1 · c note · s memorize · 1-4 tabs"
 	case tabSearch:
 		hints = "enter search · esc back"
 	case tabMemory:

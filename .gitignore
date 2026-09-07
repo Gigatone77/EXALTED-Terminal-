@@ -5,6 +5,7 @@
 
 # Build artifacts
 /dist/
+*.apk
 
 # Local data (should NOT be committed)
 /data/

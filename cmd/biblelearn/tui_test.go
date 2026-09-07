@@ -46,8 +46,9 @@ func TestTUI_BrowseRenders(t *testing.T) {
 	}
 }
 
-// TestTUI_LeftArrowNavigates ensures the left arrow (and 'h') move to the
-// previous verse rather than being swallowed by tab handling.
+// TestTUI_LeftArrowNavigates ensures the left arrow (and 'h') flip back a
+// page rather than being swallowed by tab handling. At default span 1 that is
+// a single verse.
 func TestTUI_LeftArrowNavigates(t *testing.T) {
 	e := newTestEngine(t)
 	m, err := newAppModel(e)
@@ -58,8 +59,8 @@ func TestTUI_LeftArrowNavigates(t *testing.T) {
 		T, _ := m.Update(key(k))
 		m = T.(*appModel)
 	}
-	// Move down to verse 4.
-	for _, k := range []string{"j", "j", "j"} {
+	// Flip forward to verse 4 (default span = 1).
+	for _, k := range []string{"right", "right", "right"} {
 		press(k)
 	}
 	if m.verse != 4 {
@@ -75,8 +76,8 @@ func TestTUI_LeftArrowNavigates(t *testing.T) {
 	}
 }
 
-// TestTUI_ArrowKeysControlSpan verifies up expands and down shrinks the
-// visible verse span, while j/k still navigate verses.
+// TestTUI_ArrowKeysControlSpan verifies down expands and up shrinks the
+// visible verse span, while left/right flip pages proportional to the span.
 func TestTUI_ArrowKeysControlSpan(t *testing.T) {
 	e := newTestEngine(t)
 	m, err := newAppModel(e)
@@ -90,23 +91,71 @@ func TestTUI_ArrowKeysControlSpan(t *testing.T) {
 	if m.verseSpan != 1 {
 		t.Fatalf("expected initial span 1, got %d", m.verseSpan)
 	}
-	// up expands.
-	press("up")
-	if m.verseSpan != 2 {
-		t.Errorf("up: expected span 2, got %d", m.verseSpan)
-	}
-	// down shrinks back.
+	// down expands.
 	press("down")
-	if m.verseSpan != 1 {
-		t.Errorf("down: expected span 1, got %d", m.verseSpan)
+	if m.verseSpan != 2 {
+		t.Errorf("down: expected span 2, got %d", m.verseSpan)
 	}
-	// j/k still navigate verses (not the span).
-	press("j")
-	if m.verse != 2 {
-		t.Errorf("j: expected verse 2, got %d", m.verse)
-	}
+	// up shrinks back.
+	press("up")
 	if m.verseSpan != 1 {
-		t.Errorf("j must not change span, got %d", m.verseSpan)
+		t.Errorf("up: expected span 1, got %d", m.verseSpan)
+	}
+	// left/right flip pages proportional to the span: expand to 3 verses,
+	// then skip 3 verses at a time.
+	press("down")
+	press("down")
+	if m.verseSpan != 3 {
+		t.Fatalf("expected span 3, got %d", m.verseSpan)
+	}
+	if m.verse != 1 {
+		t.Fatalf("expected verse 1, got %d", m.verse)
+	}
+	press("right")
+	if m.verse != 4 {
+		t.Errorf("right at span 3: expected verse 4, got %d", m.verse)
+	}
+	press("left")
+	if m.verse != 1 {
+		t.Errorf("left at span 3: expected verse 1, got %d", m.verse)
+	}
+}
+
+// TestTUI_PageFlipChapterSpill verifies a page flip past the end of a chapter
+// starts the next chapter, and one before the start lands on the previous
+// chapter's last full page.
+func TestTUI_PageFlipChapterSpill(t *testing.T) {
+	e := newTestEngine(t)
+	m, err := newAppModel(e)
+	if err != nil {
+		t.Fatalf("model: %v", err)
+	}
+	press := func(k string) {
+		T, _ := m.Update(key(k))
+		m = T.(*appModel)
+	}
+	m.loadBook(1) // Genesis
+	m.chapter = 1
+	m.verse = 30 // Gen 1 has 31; 30 still leaves room to expand
+	press("down")
+	if m.verseSpan != 2 {
+		t.Fatalf("expected span 2, got %d", m.verseSpan)
+	}
+	press("right")
+	if m.chapter != 2 {
+		t.Errorf("right past chapter end: expected chapter 2, got %d", m.chapter)
+	}
+	if m.verse != 1 {
+		t.Errorf("right past chapter end: expected verse 1, got %d", m.verse)
+	}
+	// Back one page from Gen 2:1 at span 2 should land on the last full page
+	// of Gen 1 (verses 30..31).
+	press("left")
+	if m.chapter != 1 {
+		t.Errorf("left before chapter start: expected chapter 1, got %d", m.chapter)
+	}
+	if m.verse != 30 {
+		t.Errorf("left before chapter start: expected verse 30, got %d", m.verse)
 	}
 }
 
