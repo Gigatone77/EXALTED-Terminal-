@@ -36,6 +36,26 @@ func (s *Store) SaveMemory(m MemoryState) error {
 	return err
 }
 
+// GetMemory returns the spaced-repetition state for one verse, if any.
+func (s *Store) GetMemory(versionID string, book, chapter, verse int) (MemoryState, bool, error) {
+	var m MemoryState
+	var dueStr string
+	err := s.db.QueryRow(`SELECT version_id, book, chapter, verse, interval_days, ease, reps, due, state
+		FROM memory WHERE version_id=? AND book=? AND chapter=? AND verse=?`,
+		versionID, book, chapter, verse).Scan(&m.VersionID, &m.Book, &m.Chapter, &m.Verse,
+		&m.IntervalDays, &m.Ease, &m.Reps, &dueStr, &m.State)
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return MemoryState{}, false, nil
+		}
+		return MemoryState{}, false, err
+	}
+	if t, err := time.Parse(time.RFC3339, dueStr); err == nil {
+		m.Due = t
+	}
+	return m, true, nil
+}
+
 // DueCards returns memory cards that are due for review for a version.
 func (s *Store) DueCards(versionID string, limit int) ([]MemoryState, error) {
 	if limit <= 0 {

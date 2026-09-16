@@ -1,7 +1,11 @@
 # Binaries
 /biblelearn
+/bibleexport
 /exhaled
 /bin/
+
+# Scratch test stubs (non-buildable by design)
+cmd/_stc/
 
 # Build artifacts
 /dist/

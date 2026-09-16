@@ -79,7 +79,7 @@ func (s *Store) SuggestTerms(prefix string, version, collection string, limit in
 	}
 	// Range scan over the term primary-key prefix.
 	end := prefix + "\uffff"
-	args := []any{prefix, end, limit * 8}
+	args := []any{prefix, end}
 	sql := `SELECT term, SUM(count) AS c FROM term_index
 	        WHERE term >= ? AND term < ?`
 	if version != "" {
@@ -90,6 +90,7 @@ func (s *Store) SuggestTerms(prefix string, version, collection string, limit in
 		sql += ` AND collection=?`
 		args = append(args, collection)
 	}
+	args = append(args, limit*8)
 	sql += ` GROUP BY term `
 	if freq {
 		sql += `ORDER BY c DESC `

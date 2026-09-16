@@ -36,6 +36,8 @@ Commands:
   index             Rebuild the term & search index for installed versions
   notes             Manage study notes (trash is recoverable)
   versions          List versions; rm/restore/purge trash a version
+  bridge            Cyberpunk 2077 CET companion: watch a mod folder and
+                    answer JSON commands against an isolated offline store
   backup            Create a flash-safe, fsynced snapshot of your data
   serve             Serve the local web/app UI
   version           Print the Exalted version
@@ -111,6 +113,8 @@ func main() {
 		fmt.Printf("EXALTED Terminal %s\n", version)
 	case "serve":
 		runServe(dataDir, rest)
+	case "bridge":
+		runBridge(rest)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n%s", cmd, usage)
 		os.Exit(2)
